@@ -124,3 +124,9 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'school_system.User'
+LOGIN_REDIRECT_URL = "dashboard"
+LOGOUT_REDIRECT_URL = "dashboard"
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+EMAIL_HOST = "localhost"
+EMAIL_PORT = 1025
