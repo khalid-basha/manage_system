@@ -3,6 +3,7 @@ from django.contrib.auth.models import AbstractUser
 from phonenumber_field.modelfields import PhoneNumberField
 from django.contrib.auth import get_user_model
 from .managers import UserManager
+
 # Create your models here.
 
 
@@ -13,8 +14,8 @@ class User(AbstractUser):
         (3,'TEACHER'),
     )
     user_type = models.PositiveSmallIntegerField(choices = USER_TYPE_OPTIONS)
-    mobile_num = PhoneNumberField(max_length =12, unique = True, null =True)
-    birth_date = models.DateField(null = True)
+    mobile_num = PhoneNumberField(max_length =13, unique = True, null =True)
+    birth_date = models.DateField(null =True)
     objects = UserManager()
     def __str__(self):
         return self.username
