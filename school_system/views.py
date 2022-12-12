@@ -49,7 +49,10 @@ def get_courses(courses, error_msg):
 
 def get_course(request, pk):
     if request.method == "GET":
-        course = Course.objects.get(pk=pk)
+        try:
+            course = Course.objects.get(pk=pk)
+        except:
+            return JsonResponse({"Error": "No course found with pk = "+(str(pk))}, status=404)
         serializer = CourseSerializer(course)
         return JsonResponse(serializer.data)
     else:
@@ -67,7 +70,7 @@ def add_course(request):
                 serializer.save()
                 return JsonResponse({"result": "course created"}, status=201)
             return JsonResponse(serializer.errors, status=400)
-        return JsonResponse({'error': 'Only teachers can add courses'}, status=401)
+        return JsonResponse({'Error': 'Only teachers can add courses'}, status=401)
     return JsonResponse({"Error": "Method Not Allowed"}, status=405)
 
 @csrf_exempt
@@ -76,8 +79,11 @@ def enroll_course(request, pk):
     if request.method == "POST":
         if request.user.user_type == 2:
             student = Student.objects.get(user=request.user)
-            course = Course.objects.get(pk=pk)
-            student.courses.add(course)
-            return JsonResponse({'message': 'Successfully enrolled in course'})
-        return JsonResponse({'error': 'Only students can enroll in courses'}, status=401)
+            try:
+                course = Course.objects.get(pk=pk)
+                student.courses.add(course)
+            except:
+                return JsonResponse({"Error": "No course found with pk = "+(str(pk))}, status=404)
+            return JsonResponse({'Message': 'Successfully enrolled in course'}, status=201)
+        return JsonResponse({'Error': 'Only students can enroll in courses'}, status=401)
     return JsonResponse({"Error": "Method Not Allowed"}, status=405)

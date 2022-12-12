@@ -4,7 +4,6 @@ from django.contrib.auth import get_user_model
 from phonenumber_field.modelfields import PhoneNumberField
 from .managers import UserManager
 import json
-from rest_framework.test import APIClient
 from django.test import Client
 from django.contrib.auth import authenticate
 
@@ -188,24 +187,27 @@ class ViewsTestCase(TestCase):
     def setUp(self):
 
         self.client=Client()
-
         self.user1 = get_user_model().objects.create(username="user1",
-                password = "user1",user_type=1,mobile_num="+923331234567",
+                user_type=1,mobile_num="+923331234567",
                 birth_date="1999-09-09")
         self.user2 = get_user_model().objects.create(username="user2",
-                password='user2',user_type=2,mobile_num="+923331234568",
+                user_type=2,mobile_num="+923331234568",
                 birth_date="1999-09-09")
         self.user3 = get_user_model().objects.create(username='user3',
                  user_type=3,mobile_num="+923331234569",
                 birth_date="1999-09-09")
+        self.user1.set_password('user1')
+        self.user2.set_password('user2')
         self.user3.set_password('user3')
+        self.user1.save()
+        self.user2.save()
         self.user3.save()
         self.course1 = Course.objects.create(title='Course 1',
                 subject='Subject 1', hours=20, teacher_id=self.user3.id)
         self.course2 = Course.objects.create(title='Course 2',
                 subject='Subject 2', hours=30, teacher_id=self.user3.id)
         self.student = Student.objects.get(user=self.user2)
-        self.student.courses.add(self.course1)
+        #self.student.courses.add(self.course1)
 
     def test_register(self):
         data = {'username': 'user4', 'password': 'user4', 'user_type': 1}
@@ -220,14 +222,14 @@ class ViewsTestCase(TestCase):
         self.assertEqual(json.loads(response.content), {'error': 'Invalid data'})
 
     def test_courses_list(self):
-        response = self.client.get('/courses/')
+        response = self.client.get('/courses_list/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(),
          [{"title": "Course 1", "subject": "Subject 1", "hours": 20, 'teacher_id':self.user3.id},
          {"title": "Course 2", "subject": "Subject 2", "hours": 30, 'teacher_id':self.user3.id}])
         response = self.client.get('/accounts/logout/')
         self.assertEqual(response.status_code, 200)
-        response = self.client.get('/courses/')
+        response = self.client.get('/courses_list/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(),
             [{"title": "Course 1", "subject": "Subject 1", "hours": 20, 'teacher_id':self.user3.id},
@@ -237,12 +239,130 @@ class ViewsTestCase(TestCase):
         credentials = { 'username': 'user3','password': 'user3'}
         user = authenticate(**credentials)
         self.client._login(user)
-        response = self.client.get('/my_courses/')
+        response = self.client.get('/courses/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(),
          [{"title": "Course 1", "subject": "Subject 1", "hours": 20, 'teacher_id':self.user3.id},
          {"title": "Course 2", "subject": "Subject 2", "hours": 30, 'teacher_id':self.user3.id}])
         response = self.client.get('/accounts/logout/')
         self.assertEqual(response.status_code, 200)
-        response = self.client.get('/my_courses/')
+        response = self.client.get('/courses/')
         self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/accounts/login/?next=/courses/")
+
+    def test_admin_my_courses(self):
+        credentials = { 'username': 'user1','password': 'user1'}
+        user = authenticate(**credentials)
+        self.client._login(user)
+        response = self.client.get('/courses/')
+        self.assertEqual(response.status_code, 406)
+        self.assertEqual(response.json(), {"Error": "Invalid user type"})
+        response = self.client.get('/accounts/logout/')
+        self.assertEqual(response.status_code, 200)
+        response = self.client.get('/courses/')
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/accounts/login/?next=/courses/")
+
+    def test_student_my_courses(self):
+        credentials = { 'username': 'user2','password': 'user2'}
+        user = authenticate(**credentials)
+        self.client._login(user)
+        response = self.client.get('/courses/')
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"Error": "No courses found for student"})
+        self.student.courses.add(self.course1)
+        response = self.client.get('/courses/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(),
+         [{"title": "Course 1", "subject": "Subject 1", "hours": 20, 'teacher_id':self.user3.id}])
+        response = self.client.get('/accounts/logout/')
+        self.assertEqual(response.status_code, 200)
+        response = self.client.get('/courses/')
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/accounts/login/?next=/courses/")
+
+    def test_get_course(self):
+        response = self.client.post('/courses/1/', json.dumps({}),
+                    content_type='application/json')
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {'Error': 'Method Not Allowed'})
+        response = self.client.get('/courses/7/')
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {'Error': 'No course found with pk = 7'})
+        response = self.client.get('/courses/1/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(),
+            {"title": "Course 1", "subject": "Subject 1", "hours": 20,
+             'teacher_id':self.user3.id})
+        response = self.client.get('/courses/2/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(),
+            {"title": "Course 2", "subject": "Subject 2", "hours": 30,
+             'teacher_id':self.user3.id})
+
+    def test_add_course(self):
+        credentials = { 'username': 'user3','password': 'user3'}
+        user = authenticate(**credentials)
+        self.client._login(user)
+        previous_courses_count =Course.objects.count()
+        course_data = {"title": "Course 3", "subject": "Subject 3", "hours": 40}
+        response = self.client.post("/add_course/",
+                    data=course_data, content_type="application/json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json(), {"result": "course created"})
+        self.assertEqual(previous_courses_count+1, Course.objects.count())
+
+        response = self.client.post("/add_course/",
+                    data={}, content_type="application/json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {'title': ['This field is required.'], 'subject': ['This field is required.']})
+
+        response = self.client.get("/add_course/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"Error": "Method Not Allowed"})
+
+        credentials = { 'username': 'user2','password': 'user2'}
+        user = authenticate(**credentials)
+        self.client._login(user)
+        course_data = {"title": "Course 4", "subject": "Subject 2", "hours": 25}
+        response = self.client.post("/add_course/",
+                    data=course_data, content_type="application/json")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"Error": "Only teachers can add courses"})
+
+        self.client.logout()
+        response = self.client.post("/add_course/", data=course_data, content_type="application/json")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/accounts/login/?next=/add_course/")
+
+    def test_enroll_course(self):
+        credentials = { 'username': 'user3','password': 'user3'}
+        user = authenticate(**credentials)
+        self.client._login(user)
+        response = self.client.post("/enroll_course/1/")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {'Error': 'Only students can enroll in courses'})
+
+        credentials = { 'username': 'user2','password': 'user2'}
+        user = authenticate(**credentials)
+        self.client._login(user)
+        student_courses_count = Student.objects.get(pk=user.id).courses.count()
+        response = self.client.post("/enroll_course/1/")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json(), {'Message': 'Successfully enrolled in course'})
+        self.assertEqual(student_courses_count+1, Student.objects.get(pk=user.id).courses.count())
+
+        student_courses_count = Student.objects.get(pk=user.id).courses.count()
+        response = self.client.post("/enroll_course/7/")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {'Error': 'No course found with pk = 7'})
+        self.assertEqual(student_courses_count, Student.objects.get(pk=user.id).courses.count())
+
+        response = self.client.get("/enroll_course/1/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json(), {"Error": "Method Not Allowed"})
+
+        self.client.logout()
+        response = self.client.post("/enroll_course/1/")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/accounts/login/?next=/enroll_course/1/")
